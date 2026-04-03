@@ -1287,6 +1287,7 @@ export default class Parser {
   protected canStartExpression(): boolean {
     const t = this.peek().type;
     return t !== TokenType.Semicolon &&
+      t !== TokenType.Colon &&
       t !== TokenType.RightParen &&
       t !== TokenType.RightBracket &&
       t !== TokenType.RightBrace &&
