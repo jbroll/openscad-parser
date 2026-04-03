@@ -916,7 +916,15 @@ export default class Parser {
       const firstParen = this.previous();
       const vars = this.args(true);
       const secondParen = this.previous();
-      const innerExpr = this.expression();
+      // In modern OpenSCAD (2019.05+), assert can be used as a terminal expression
+      // without a trailing expression — returns undef implicitly.
+      // e.g., x > 0 ? x : assert(false, "bad");
+      let innerExpr: Expression;
+      if (this.canStartExpression()) {
+        innerExpr = this.expression();
+      } else {
+        innerExpr = new LiteralExpr<null>(null, { literalToken: secondParen as any });
+      }
       return new AssertExpr(vars, innerExpr, {
         firstParen,
         secondParen,
@@ -942,7 +950,13 @@ export default class Parser {
       const firstParen = this.previous();
       const vars = this.args(true);
       const secondParen = this.previous();
-      const innerExpr = this.expression();
+      // echo can also appear as a terminal expression without a trailing value.
+      let innerExpr: Expression;
+      if (this.canStartExpression()) {
+        innerExpr = this.expression();
+      } else {
+        innerExpr = new LiteralExpr<null>(null, { literalToken: secondParen as any });
+      }
       return new EchoExpr(vars, innerExpr, {
         firstParen,
         secondParen,
@@ -1264,5 +1278,19 @@ export default class Parser {
   }
   protected previous(): Token {
     return this.tokens[this.currentToken - 1];
+  }
+  /**
+   * Check if the current token can start an expression.
+   * Used to detect when assert/echo at the end of a ternary chain
+   * has no trailing expression (implicitly returns undef).
+   */
+  protected canStartExpression(): boolean {
+    const t = this.peek().type;
+    return t !== TokenType.Semicolon &&
+      t !== TokenType.RightParen &&
+      t !== TokenType.RightBracket &&
+      t !== TokenType.RightBrace &&
+      t !== TokenType.Comma &&
+      t !== TokenType.Eot;
   }
 }

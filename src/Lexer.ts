@@ -238,12 +238,23 @@ export default class Lexer {
           str += "\t";
         } else if (this.match("r")) {
           str += "\r";
+        } else if (this.match("u")) {
+          // Handle \uXXXX unicode escape sequences (OpenSCAD supports these)
+          let hex = '';
+          for (let i = 0; i < 4; i++) {
+            const h = this.peek();
+            if (/[0-9a-fA-F]/.test(h)) {
+              hex += this.advance();
+            } else {
+              break;
+            }
+          }
+          str += hex ? String.fromCodePoint(parseInt(hex, 16)) : 'u';
         } else {
           throw this.errorCollector.reportError(
-            new IllegalStringEscapeSequenceLexingError(this.getLoc(), `\\${c}`)
+            new IllegalStringEscapeSequenceLexingError(this.getLoc(), `\\${this.peek()}`)
           );
         }
-        //TODO: Add unicode escape sequences handling
       } else {
         str += c;
       }
