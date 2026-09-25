@@ -479,6 +479,25 @@ export default class Parser {
         // error out when we encounter a positional argument when it is not allowed
         break;
       }
+      // Check for tuple-destructured variable in for loops: (a, b) = expr
+      if (forceType === AssignmentNodeRole.VARIABLE_DECLARATION && this.isTuplePattern() > 0) {
+        const tupleArg = this.parseTupleAssignment();
+        args.push(tupleArg);
+        if (this.matchToken(TokenType.Comma)) {
+          tupleArg.tokens.trailingCommas!.push(this.previous());
+          this.consumeUselessCommas(tupleArg.tokens.trailingCommas!);
+          if (this.matchToken(TokenType.RightParen)) {
+            return args;
+          }
+          continue;
+        }
+        this.consumeUselessCommas(tupleArg.tokens.trailingCommas!);
+        if (this.matchToken(TokenType.RightParen)) {
+          return args;
+        }
+        continue;
+      }
+
       let value: Expression | null = null;
       let name: string;
       let nameToken: Token | null = null;
@@ -544,6 +563,75 @@ export default class Parser {
     );
   }
   /**
+   * Checks if the current position starts a tuple-destructured variable pattern:
+   * (ident, ident, ...) =
+   * Used in for-loop contexts to support for((x, y) = pairs).
+   * Returns the number of tokens to skip (0 if not a tuple pattern).
+   */
+  protected isTuplePattern(): number {
+    let offset = 0;
+    if (this.tokens[this.currentToken + offset]?.type !== TokenType.LeftParen) {
+      return 0;
+    }
+    offset++;
+    // Must have at least one identifier
+    if (this.tokens[this.currentToken + offset]?.type !== TokenType.Identifier) {
+      return 0;
+    }
+    offset++;
+    // Consume comma-separated identifiers
+    while (this.tokens[this.currentToken + offset]?.type === TokenType.Comma) {
+      offset++;
+      if (this.tokens[this.currentToken + offset]?.type !== TokenType.Identifier) {
+        return 0;
+      }
+      offset++;
+    }
+    // Must end with ) =
+    if (this.tokens[this.currentToken + offset]?.type !== TokenType.RightParen) {
+      return 0;
+    }
+    offset++;
+    if (this.tokens[this.currentToken + offset]?.type !== TokenType.Equal) {
+      return 0;
+    }
+    return offset;
+  }
+
+  /**
+   * Parses a tuple-destructured assignment: (ident, ident, ...) = expr
+   * Returns an AssignmentNode with the name set to "(ident, ident, ...)".
+   */
+  protected parseTupleAssignment(): AssignmentNode {
+    this.advance(); // consume LeftParen
+    const firstParen = this.previous();
+    const names: string[] = [];
+    const nameTokens: Token[] = [];
+    names.push((this.advance() as LiteralToken<string>).value);
+    nameTokens.push(this.previous());
+    while (this.matchToken(TokenType.Comma)) {
+      names.push((this.advance() as LiteralToken<string>).value);
+      nameTokens.push(this.previous());
+    }
+    this.consume(TokenType.RightParen, "after tuple variable names");
+    this.consume(TokenType.Equal, "after tuple variable pattern in 'for'");
+    const equals = this.previous();
+    const value = this.expression();
+    const tupleName = "(" + names.join(", ") + ")";
+    return new AssignmentNode(
+      tupleName,
+      value,
+      AssignmentNodeRole.VARIABLE_DECLARATION,
+      {
+        equals,
+        semicolon: null,
+        name: firstParen,
+        trailingCommas: [],
+      }
+    );
+  }
+
+  /**
    * Parses arguments from the 'for' loop comprehension.
    * The initial paren must be consumed. Stops on semicolon or right paren, but does not consume them.
    */
@@ -563,7 +651,11 @@ export default class Parser {
 
       let arg;
 
-      if (
+      if (this.isTuplePattern() > 0) {
+        // Tuple-destructured for loop variable: (a, b) = expr
+        arg = this.parseTupleAssignment();
+        args.push(arg);
+      } else if (
         this.peek().type === TokenType.Identifier &&
         this.peekNext().type === TokenType.Equal
       ) {
