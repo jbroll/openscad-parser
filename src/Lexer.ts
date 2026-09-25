@@ -239,21 +239,25 @@ export default class Lexer {
         } else if (this.match("r")) {
           str += "\r";
         } else if (this.match("u")) {
-          // Handle \uXXXX unicode escape sequences (OpenSCAD supports these)
-          let hex = '';
-          for (let i = 0; i < 4; i++) {
-            const h = this.peek();
-            if (/[0-9a-fA-F]/.test(h)) {
-              hex += this.advance();
-            } else {
-              break;
-            }
-          }
-          str += hex ? String.fromCodePoint(parseInt(hex, 16)) : 'u';
-        } else {
+          // \uXXXX unicode escape
+          const hex = this.consumeHex(4);
+          str += hex ? String.fromCodePoint(parseInt(hex, 16)) : "u";
+        } else if (this.match("U")) {
+          // \UXXXXXX unicode escape (6 hex digits)
+          const hex = this.consumeHex(6);
+          str += hex ? String.fromCodePoint(parseInt(hex, 16)) : "U";
+        } else if (this.match("x")) {
+          // \xXX escape (2 hex digits)
+          const hex = this.consumeHex(2);
+          str += hex ? String.fromCodePoint(parseInt(hex, 16)) : "x";
+        } else if (this.isAtEnd()) {
           throw this.errorCollector.reportError(
-            new IllegalStringEscapeSequenceLexingError(this.getLoc(), `\\${this.peek()}`)
+            new IllegalStringEscapeSequenceLexingError(this.getLoc(), "\\")
           );
+        } else {
+          // OpenSCAD warns "Undefined escape sequence" and keeps the
+          // character without the backslash: "\0" is "0", "\q" is "q".
+          str += this.advance();
         }
       } else {
         str += c;
@@ -266,6 +270,14 @@ export default class Lexer {
     }
     this.advance();
     this.addToken(TokenType.StringLiteral, str);
+  }
+  /** Consume up to `max` hex digits and return them. */
+  protected consumeHex(max: number) {
+    let hex = "";
+    while (hex.length < max && /[0-9a-fA-F]/.test(this.peek())) {
+      hex += this.advance();
+    }
+    return hex;
   }
   protected consumeNumberLiteral() {
     let ateDigit = /[0-9]/.test(this.codeFile.code[this.start.char]);
