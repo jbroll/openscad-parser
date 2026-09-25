@@ -469,8 +469,15 @@ describe("Lexer", () => {
         'a\nb\t\rc\\gg"g'
       );
     });
-    it("throws LexingError on invalid escape sequences", () => {
-      expect(() => testStringLexing(`"\\XD"`)).toThrowError(LexingError);
+    it("lexes \\U, \\u and \\x escapes", () => {
+      expect(testStringLexing(`"\\U01F600"`)).toEqual("\u{1F600}");
+      expect(testStringLexing(`"\\u00e9x"`)).toEqual("\u00e9x");
+      expect(testStringLexing(`"\\x41B"`)).toEqual("AB");
+    });
+    it("keeps the character of an undefined escape, as OpenSCAD does", () => {
+      // OpenSCAD warns "Undefined escape sequence" and drops the backslash
+      expect(testStringLexing(`"\\0"`)).toEqual("0");
+      expect(testStringLexing(`"\\XD"`)).toEqual("XD");
     });
     it("throws LexingError on unterminated strings", () => {
       expect(() => testStringLexing(`"aaaa`)).toThrowError(LexingError);
